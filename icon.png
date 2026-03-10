@@ -1,4 +1,4 @@
 {
 "action": "image_generation",
-"action_input": "{ "prompt": "A professional and modern app icon for a stock trading app named 'Yonatan's Exchange'. The icon should feature a minimalist rising green stock chart line and a sleek dollar sign. Professional blue and dark theme, high quality, flat design, white background for easy cropping.", "aspect_ratio": "1:1" }"
+"action_input": "{ "prompt": "A professional, modern square app icon for a stock trading platform named 'Yonatan's Exchange'. The icon features a stylized, elegant upward-trending stock graph line combined with a bold dollar sign ($) and a subtle shekel symbol (₪) integrated. The color palette consists of deep professional blue and bright, sophisticated gold against a dark blue background. The overall style is clean and minimal, with soft lighting and a slight, expensive sheen. The icon has clean, rounded corners, suitable for a mobile app icon. The background is isolated white for easy extraction.", "aspect_ratio": "1:1" }"
 }
