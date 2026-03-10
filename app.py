@@ -6,9 +6,32 @@ import os
 import pandas as pd
 from datetime import datetime
 
-st.set_page_config(page_title="מערכת המסחר של יונתן", layout="wide")
+# הגדרות עיצוב - הוספנו כאן אייקון וכותרת
+st.set_page_config(
+    page_title="הבורסה של יונתן",
+    page_icon="📈", 
+    layout="wide",
+    initial_sidebar_state="collapsed"
+)
 
-# פונקציות ניהול נתונים
+# קוד CSS שגורם לאתר להיראות כמו אפליקציה (מסתיר כפתורים מיותרים)
+st.markdown("""
+    <style>
+    #MainMenu {visibility: hidden;}
+    footer {visibility: hidden;}
+    header {visibility: hidden;}
+    .stApp {
+        bottom: 0px;
+    }
+    /* התאמה לטלפון - פחות רווחים */
+    .block-container {
+        padding-top: 2rem;
+        padding-bottom: 0rem;
+    }
+    </style>
+    """, unsafe_allow_html=True)
+
+# --- פונקציות ניהול נתונים (ללא שינוי) ---
 def get_user_file(username):
     return f"portfolio_{username.lower()}.json"
 
@@ -30,14 +53,12 @@ def load_data(username):
             return json.load(f)
     return None
 
-# משיכת נתוני שוק
 @st.cache_data(ttl=300)
 def get_market_data(tickers):
     try:
         usd_rate = requests.get("https://open.er-api.com/v6/latest/USD").json()['rates']['ILS']
     except:
         usd_rate = 3.65
-    
     data = {}
     for t in tickers:
         stock = yf.Ticker(t)
@@ -52,7 +73,6 @@ def get_market_data(tickers):
                         start_val = hist['Close'].iloc[-days]
                     return ((curr - start_val) / start_val) * 100
                 except: return 0.0
-
             data[t] = {
                 'usd': curr, 'ils': curr * usd_rate,
                 '1w': calc_change(5), '1m': calc_change(21), '6m': calc_change(126),
@@ -60,26 +80,32 @@ def get_market_data(tickers):
             }
     return usd_rate, data
 
-# --- תפריט צדדי ---
-st.sidebar.title("👤 כניסה למערכת")
+# --- ממשק משתמש ---
+st.sidebar.title("👤 חשבון")
 user_list = ["בחר משתמש", "יונתן", "אפרת", "נסיון דמה"]
 username = st.sidebar.selectbox("מי סוחר היום?", user_list)
 
 if username == "בחר משתמש":
-    st.title("🚀 ברוכים הבאים לאפליקציית המסחר")
-    st.info("אנא בחר משתמש מהתפריט הצדדי")
+    st.title("📊 הבורסה של יונתן")
+    st.write("ברוך הבא! בחר את השם שלך מהתפריט בצד כדי להתחיל.")
+    # הצגת נתוני שוק כלליים גם למי שלא התחבר
+    usd_rate, market = get_market_data(['NVDA', 'GLD', 'SHLD'])
+    st.subheader("מצב השוק כרגע:")
+    c1, c2, c3 = st.columns(3)
+    for i, t in enumerate(['NVDA', 'GLD', 'SHLD']):
+        with [c1, c2, c3][i]:
+            st.metric(t, f"${market[t]['usd']:.2f}", f"{market[t]['1d'] if '1d' in market[t] else market[t]['1w']:.2f}%")
 else:
     user_data = load_data(username)
     if user_data is None:
-        st.subheader(f"ברוך הבא, {username}!")
-        start_money = st.number_input("עם כמה שקלים תרצה להתחיל?", min_value=100, value=5000)
-        if st.button("פתח תיק חדש"):
+        st.subheader(f"אהלן {username}!")
+        start_money = st.number_input("עם כמה שקלים נתחיל?", min_value=100, value=5000)
+        if st.button("פתח תיק"):
             new_data = {"balance_ils": float(start_money), "initial_funds": float(start_money), "portfolio": {}, "buy_prices": {}, "history": []}
             save_data(username, **new_data)
             st.rerun()
         st.stop()
 
-    # טעינת משתנים
     balance_ils = user_data["balance_ils"]
     initial_funds = user_data["initial_funds"]
     portfolio = user_data["portfolio"]
@@ -88,82 +114,64 @@ else:
 
     usd_rate, market = get_market_data(['NVDA', 'GLD', 'SHLD'])
 
-    st.title(f"תיק המסחר של {username}")
-    st.sidebar.metric("מזומן פנוי", f"₪{balance_ils:,.0f}")
+    st.title(f"התיק של {username}")
     
-    if st.sidebar.button("אפס תיק (Reset)"):
-        os.remove(get_user_file(username))
-        st.rerun()
-
-    # --- מניות למסחר ---
-    st.subheader("📊 מניות וביצועי שוק")
-    for t in ['NVDA', 'GLD', 'SHLD']:
-        m = market[t]
-        with st.expander(f"{t}: ${m['usd']:.2f} (₪{m['ils']:.0f})"):
-            stats_df = pd.DataFrame({
-                "טווח": ["שבוע", "חודש", "6 חודשים", "YTD", "שנה", "5 שנים"],
-                "שינוי %": [f"{m['1w']:.2f}%", f"{m['1m']:.2f}%", f"{m['6m']:.2f}%", f"{m['ytd']:.2f}%", f"{m['1y']:.2f}%", f"{m['5y']:.2f}%"]
-            })
-            st.table(stats_df)
-            
-            qty_buy = st.number_input(f"כמה יחידות לקנות?", min_value=0, step=1, key=f"buy_{t}")
-            if st.button(f"קנה {t}", key=f"btn_{t}"):
-                cost = qty_buy * m['ils']
-                if cost <= balance_ils:
-                    if t in portfolio:
-                        old_q = portfolio[t]
-                        buy_prices[t] = ((old_q * buy_prices[t]) + (qty_buy * m['usd'])) / (old_q + qty_buy)
-                        portfolio[t] += qty_buy
-                    else:
-                        portfolio[t], buy_prices[t] = qty_buy, m['usd']
-                    balance_ils -= cost
-                    history.append({"תאריך": datetime.now().strftime("%d/%m/%Y %H:%M"), "פעולה": "קנייה", "מניה": t, "כמות": qty_buy, "מחיר": f"${m['usd']:.2f}"})
-                    save_data(username, balance_ils, initial_funds, portfolio, buy_prices, history)
-                    st.rerun()
-                else: st.error("אין מספיק כסף!")
-
-    st.divider()
-
-    # --- התיק שלי ---
-    st.subheader("💼 המניות שלי")
+    # סיכום מהיר למעלה
     total_val_ils = balance_ils
-    if not portfolio:
-        st.write("אין מניות כרגע.")
-    else:
-        for t, qty in list(portfolio.items()):
-            curr_p, buy_p = market[t]['usd'], buy_prices[t]
-            val_ils = qty * curr_p * usd_rate
-            total_val_ils += val_ils
-            profit_pct = ((curr_p - buy_p) / buy_p) * 100
-            
-            with st.container():
-                st.write(f"### {t} ({qty} יחידות)")
-                c1, c2, c3 = st.columns(3)
-                c1.write(f"**מחיר קנייה:** ${buy_p:.2f} (₪{buy_p*usd_rate:.0f})")
-                c2.write(f"**מחיר עכשיו:** ${curr_p:.2f} (₪{curr_p*usd_rate:.0f})")
-                c3.metric("רווח/הפסד %", f"{profit_pct:.2f}%")
-                
-                sell_q = st.number_input("כמות למכירה", min_value=1, max_value=int(qty), key=f"sell_q_{t}")
-                if st.button(f"מכור {sell_q} מתוך {t}", key=f"sell_btn_{t}"):
+    for t, qty in portfolio.items():
+        total_val_ils += qty * market[t]['usd'] * usd_rate
+    
+    overall_profit = total_val_ils - initial_funds
+    st.metric("שווי כולל", f"₪{total_val_ils:,.0f}", f"{overall_profit:,.0f} ₪")
+
+    # טאבים לנוחות בטלפון
+    tab1, tab2, tab3 = st.tabs(["📉 מסחר", "💼 התיק שלי", "📜 היסטוריה"])
+
+    with tab1:
+        for t in ['NVDA', 'GLD', 'SHLD']:
+            m = market[t]
+            with st.expander(f"{t}: ₪{m['ils']:.0f}"):
+                st.write(f"מחיר דולרי: ${m['usd']:.2f}")
+                st.write(f"עלייה בשנה: {m['1y']:.1f}%")
+                qty_buy = st.number_input(f"כמות", min_value=0, step=1, key=f"b_{t}")
+                if st.button(f"קנה {t}", key=f"btn_{t}"):
+                    cost = qty_buy * m['ils']
+                    if cost <= balance_ils:
+                        if t in portfolio:
+                            old_q = portfolio[t]
+                            buy_prices[t] = ((old_q * buy_prices[t]) + (qty_buy * m['usd'])) / (old_q + qty_buy)
+                            portfolio[t] += qty_buy
+                        else:
+                            portfolio[t], buy_prices[t] = qty_buy, m['usd']
+                        balance_ils -= cost
+                        history.append({"תאריך": datetime.now().strftime("%d/%m/%Y %H:%M"), "פעולה": "קנייה", "מניה": t, "כמות": qty_buy, "מחיר": f"${m['usd']:.2f}"})
+                        save_data(username, balance_ils, initial_funds, portfolio, buy_prices, history)
+                        st.rerun()
+                    else: st.error("אין מספיק כסף!")
+
+    with tab2:
+        if not portfolio:
+            st.write("אין מניות כרגע.")
+        else:
+            for t, qty in list(portfolio.items()):
+                curr_p, buy_p = market[t]['usd'], buy_prices[t]
+                val_ils = qty * curr_p * usd_rate
+                profit_pct = ((curr_p - buy_p) / buy_p) * 100
+                st.write(f"**{t}** | {qty} יחידות")
+                st.write(f"שווי: ₪{val_ils:,.0f} ({profit_pct:.1f}%)")
+                sell_q = st.number_input("כמות למכירה", min_value=1, max_value=int(qty), key=f"s_qty_{t}")
+                if st.button(f"מכור", key=f"s_btn_{t}"):
                     balance_ils += (sell_q * market[t]['ils'])
                     portfolio[t] -= sell_q
                     history.append({"תאריך": datetime.now().strftime("%d/%m/%Y %H:%M"), "פעולה": "מכירה", "מניה": t, "כמות": sell_q, "מחיר": f"${curr_p:.2f}"})
-                    if portfolio[t] <= 0:
-                        del portfolio[t], buy_prices[t]
+                    if portfolio[t] <= 0: del portfolio[t], buy_prices[t]
                     save_data(username, balance_ils, initial_funds, portfolio, buy_prices, history)
                     st.rerun()
-            st.divider()
+                st.divider()
 
-    # סיכום
-    overall_profit = total_val_ils - initial_funds
-    overall_pct = (overall_profit / initial_funds) * 100
-    st.subheader("💰 סיכום כולל")
-    col1, col2, col3 = st.columns(3)
-    col1.metric("שווי תיק", f"₪{total_val_ils:,.0f}")
-    col2.metric("רווח/הפסד נקי", f"₪{overall_profit:,.0f}")
-    col3.metric("תשואה", f"{overall_pct:.2f}%")
-
-    if history:
-        with st.expander("📜 היסטוריית עסקאות"):
+    with tab3:
+        if history:
             st.table(pd.DataFrame(history)[::-1])
 
+    if st.sidebar.button("התנתק / איפוס"):
+        st.rerun()
